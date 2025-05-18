@@ -1,0 +1,403 @@
+from tkinter import *
+import tkinter
+from tkinter import filedialog
+from tkinter.filedialog import askopenfilename
+from tkinter import simpledialog
+
+import numpy as np 
+import pandas as pd 
+import seaborn as sns
+from scipy import stats
+import matplotlib.pyplot as plt
+from imblearn.over_sampling import SMOTE
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.linear_model import LinearRegression, Lasso, RidgeClassifier, ElasticNet
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, f1_score, precision_score, recall_score
+import os, joblib
+
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.models import load_model
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.utils import to_categorical
+
+global filename
+global classifier
+global X, y, X_train, X_train, y_train, y_test ,Predictions
+global dataset, df, df2, sc, train_or_load_dnn, dnn_model
+global le, labels
+
+def upload():
+    global filename
+    global dataset, df
+    filename = filedialog.askopenfilename(initialdir = "Datasets")
+    text.delete('1.0', END)
+    text.insert(END,filename+' Loaded\n\n')
+    df= pd.read_csv(filename, encoding='latin1')
+    text.insert(END,'\n\n Dataset: \n', str(df))
+    text.insert(END,df)
+
+def preprocess():
+    global dataset, df, df2
+    global X, y, X_train, X_test, y_train, y_test, scaler, le, labels
+    text.delete('1.0', END)
+
+    # Display basic information about the dataset
+    #text.insert(END, '\n\nInformation of the dataset: \n', str(df.info()))
+    print(df.info())
+    text.insert(END, '\n\nDescription of the dataset: \n' + str(df.describe().T))
+    text.insert(END, '\n\nChecking null values in the dataset: \n' + str(df.isnull().sum()))
+    text.insert(END, '\n\nUnique values in the dataset: \n' + str(df.nunique()))
+    
+    le=LabelEncoder()
+    df['full_name']=le.fit_transform(df['full_name'])
+    df['gender']=le.fit_transform(df['gender'])
+    df['device_type']=le.fit_transform(df['device_type'])
+    df['ad_position']=le.fit_transform(df['ad_position'])
+    df['browsing_history']=le.fit_transform(df['browsing_history'])
+    df['time_of_day']=le.fit_transform(df['time_of_day'])
+    
+    df = df.dropna()
+    
+    
+    df.duplicated().sum()
+    
+    df = df.drop_duplicates()
+     
+    labels=['0','1']
+
+    # Create a count plot
+    sns.set(style="darkgrid")  # Set the style of the plot
+    plt.figure(figsize=(8, 6))  # Set the figure size
+    ax = sns.countplot(data=df, x='click')
+    plt.title("Count Plot")  # Add a title to the plot
+    plt.xlabel("Categories")  # Add label to x-axis
+    plt.ylabel("Count")  # Add label to y-axis
+    for p in ax.patches:
+        ax.annotate(f'{p.get_height()}', (p.get_x() + p.get_width() / 2., p.get_height()),
+                    ha='center', va='center', fontsize=10, color='black', xytext=(0, 5),
+                    textcoords='offset points')
+    
+    print(df['click'].unique())
+    
+    y = df['click'].values
+    X = df.drop(columns=['click'], axis=1).values
+    
+    print(df['click'].unique())
+    
+       
+    smote = SMOTE(random_state=30)
+    X_res, y_res = smote.fit_resample(X, y)
+    
+    # Create a count plot
+    sns.set(style="darkgrid")  # Set the style of the plot
+    plt.figure(figsize=(8, 6))  # Set the figure size
+    ax = sns.countplot(x=y_res, data=df)
+    plt.title("Count Plot")  # Add a title to the plot
+    plt.xlabel("Categories")  # Add label to x-axis
+    plt.ylabel("Count")  # Add label to y-axis
+    for p in ax.patches:
+        ax.annotate(f'{p.get_height()}', (p.get_x() + p.get_width() / 2., p.get_height()),
+                    ha='center', va='center', fontsize=10, color='black', xytext=(0, 5),
+                    textcoords='offset points')
+        
+    X_train, X_test, y_train, y_test = train_test_split(X_res, y_res, test_size=0.2, random_state=45)    
+    text.insert(END, "\n\nTotal Records used for training: " + str(len(X_train)) + "\n")
+    text.insert(END, "\n\nTotal Records used for testing: " + str(len(X_test)) + "\n\n")
+    
+    from sklearn.preprocessing import StandardScaler
+
+    # Initialize the scaler
+    scaler = StandardScaler()
+
+    # Fit and transform the training data
+    #X_train = scaler.fit_transform(X_train)
+
+    #X_test = scaler.transform(X_test)
+
+    # Correlation heatmap
+    plt.figure(figsize=(14, 14))
+    sns.set(font_scale=1)
+    sns.heatmap(df.corr(), cmap='GnBu_r', annot=True, square=True, linewidths=.5)
+    plt.title('Variable Correlation in Heatmap')
+    #plt.show()
+
+
+   
+precision = []
+recall = []
+fscore = []
+accuracy = []
+
+#function to calculate various metrics such as accuracy, precision etc
+def calculateMetrics(algorithm, testY,predict):
+    global labels
+    
+    testY = testY.astype('int')
+    predict = predict.astype('int')
+    p = precision_score(testY, predict,average='macro') * 100
+    r = recall_score(testY, predict,average='macro') * 100
+    f = f1_score(testY, predict,average='macro') * 100
+    a = accuracy_score(testY,predict)*100 
+    accuracy.append(a)
+    precision.append(p)
+    recall.append(r)
+    fscore.append(f)
+    print(algorithm+' Accuracy    : '+str(a))
+    print(algorithm+' Precision   : '+str(p))
+    print(algorithm+' Recall      : '+str(r))
+    print(algorithm+' F1-SCORE      : '+str(f))
+    text.insert(END, "Performance Metrics of " + str(algorithm) + "\n")
+    text.insert(END, "Accuracy: " + str(a) + "\n")
+    text.insert(END, "Precision: " + str(p) + "\n")
+    text.insert(END, "Recall: " + str(r) + "\n")
+    text.insert(END, "F1-SCORE: " + str(f) + "\n\n")
+    report=classification_report(predict, testY,target_names=labels)
+    print('\n',algorithm+" classification report\n",report)
+    text.insert(END, "classification report: \n" + str(report) + "\n\n")
+    conf_matrix = confusion_matrix(testY, predict) 
+    plt.figure(figsize =(5, 5)) 
+    ax = sns.heatmap(conf_matrix, xticklabels = labels, yticklabels = labels, annot = True, cmap="Blues" ,fmt ="g");
+    ax.set_ylim([0,len(labels)])
+    plt.title(algorithm+" Confusion matrix") 
+    plt.ylabel('True class') 
+    plt.xlabel('Predicted class') 
+    plt.show()
+
+
+def GBCRegressor():
+    global ridge_clf, X_train, X_test, y_train, y_test
+    global predict
+
+    Classifier = 'model/GradientBoostingClassifier.pkl'
+    if os.path.exists(Classifier):
+        # Load the trained model from the file
+        ridge_clf = joblib.load(Classifier)
+        print("Model loaded successfully.")
+        predict = ridge_clf.predict(X_test)
+        calculateMetrics("Gradient Boosting Classifier", predict, y_test)
+    else:
+        # Initialize and train the Ridge Classifier model
+        ridge_clf = GradientBoostingClassifier()
+        ridge_clf.fit(X_train, y_train)
+        # Save the trained model to a file
+        joblib.dump(ridge_clf, Classifier) 
+        print("Model saved successfully.")
+        predict = ridge_clf.predict(X_test)
+        calculateMetrics("Gradient Boosting Classifier", predict, y_test)
+    
+  
+def FFNN():
+    global X_train, X_test, y_train, y_test, model, rfc, extractor
+    
+    import os
+    from tensorflow.keras.models import Sequential, load_model
+    from tensorflow.keras.layers import Dense
+    from sklearn.ensemble import ExtraTreesClassifier
+    from sklearn.metrics import accuracy_score
+    import joblib
+    
+    print('X_train:', X_train.shape)
+    print('X_test:', X_test.shape)
+    print('y_train:', y_train.shape)
+    print('y_test:', y_test.shape)
+
+    model_folder = "model"
+    dnn_model_path = os.path.join(model_folder, "dnn_feature_extractor.h5")
+    rfc_model_path = os.path.join(model_folder, "rfc_model.pkl")
+
+    os.makedirs(model_folder, exist_ok=True)
+
+    if os.path.exists(dnn_model_path) and os.path.exists(rfc_model_path):
+        print("Loading saved models...")
+        extractor = load_model(dnn_model_path)
+        rfc = joblib.load(rfc_model_path)
+        X_train_features = extractor.predict(X_train)
+        X_test_features = extractor.predict(X_test)
+        y_pred = rfc.predict(X_test_features)
+
+        accuracy = accuracy_score(y_test, y_pred)
+        print(f"Random Forest Classifier Accuracy: {accuracy * 100:.2f}%")
+
+        text.insert(tkinter.END, '\n\n---------FFNN Model---------\n\n')   
+        calculateMetrics("FFNN with ETC  Model", y_test, y_pred)
+    else:
+        print("Training models from scratch...")
+        model = Sequential()
+        model.add(Dense(64, activation='relu', input_shape=(8,)))  # Adjust input shape as per your data
+        model.add(Dense(32, activation='relu'))  # Feature extraction layer
+        model.add(Dense(1, activation='softmax'))  # Output layer
+
+        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+        model.fit(X_train, y_train, epochs=50, verbose=0)
+
+        extractor = Sequential(model.layers[:-1])  # Remove the output layer
+        extractor.save(dnn_model_path)
+        
+        X_train_features = extractor.predict(X_train)
+        X_test_features = extractor.predict(X_test)
+    
+        rfc = ExtraTreesClassifier()
+        rfc.fit(X_train_features, y_train)
+         
+        joblib.dump(rfc, rfc_model_path)
+        
+        y_pred = rfc.predict(X_test_features)
+
+        accuracy = accuracy_score(y_test, y_pred)
+
+        text.insert(tkinter.END, '\n\n---------FFNN Model---------\n\n')   
+        calculateMetrics("FFNN Model", y_test, y_pred)
+
+               
+def predict():
+    global scaler, rfc, model, labels, extractor
+
+    file = filedialog.askopenfilename(initialdir="Datasets")
+    test = pd.read_csv(file)
+    
+    # Display loaded test data
+    text.delete('1.0', END)
+    text.insert(END, f'{file} Loaded\n')
+    text.insert(END, "\n\nLoaded test data: \n" + str(test) + "\n")
+    
+    """le=LabelEncoder()
+    test['full_name']=le.fit_transform(test['full_name'])
+    test['gender']=le.fit_transform(test['gender'])
+    test['device_type']=le.fit_transform(test['device_type'])
+    test['ad_position']=le.fit_transform(test['ad_position'])
+    test['browsing_history']=le.fit_transform(test['browsing_history'])
+    test['time_of_day']=le.fit_transform(test['time_of_day'])"""
+    
+    if 'click' in test.columns:
+        test = test.drop(['click'], axis=1)
+        
+    test_values = test.values
+    
+    #test_scaled = scaler.transform(test_values)
+    
+    FFNN_predictions = extractor.predict(test_values)
+    
+    #predicted_classes = FFNN_predictions.argmax(axis=1)
+    
+    predicted_classes = rfc.predict(FFNN_predictions)
+      
+    predicted_labels = [labels[p] for p in predicted_classes]
+    
+    test['Predicted'] = predicted_labels
+    
+    text.insert(END, "\n\nModel Predicted value in test data: \n" + str(test) + "\n")
+
+
+
+  
+def graph():
+    columns = ["Algorithm Name", "Accuracy", "Precision", "Recall", "f1-score"]
+    algorithm_names = ["DTC Classification", "FFNN+ETC Classification"]
+    
+    # Combine metrics into a DataFrame
+    values = []
+    for i in range(len(algorithm_names)):
+        values.append([algorithm_names[i], accuracy[i], precision[i], recall[i], fscore[i]])
+    
+    temp = pd.DataFrame(values, columns=columns)
+    text.delete('1.0', END)
+    # Insert the DataFrame in the text console
+    text.insert(END, "All Model Performance metrics:\n")
+    text.insert(END, str(temp) + "\n")
+    
+    # Plotting the performance metrics
+    metrics = ["Accuracy", "Precision", "Recall", "f1-score"]
+    index = np.arange(len(algorithm_names))  # Positions of the bars
+
+    # Set up the figure and axes
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bar_width = 0.2  # Width of the bars
+    opacity = 0.8
+
+    # Plotting each metric with an offset
+    plt.bar(index, accuracy, bar_width, alpha=opacity, color='b', label='Accuracy')
+    plt.bar(index + bar_width, precision, bar_width, alpha=opacity, color='g', label='Precision')
+    plt.bar(index + 2 * bar_width, recall, bar_width, alpha=opacity, color='r', label='Recall')
+    plt.bar(index + 3 * bar_width, fscore, bar_width, alpha=opacity, color='y', label='f1-score')
+
+    # Labeling the chart
+    plt.xlabel('Algorithm')
+    plt.ylabel('Scores')
+    plt.title('Performance Comparison of All Models')
+    plt.xticks(index + bar_width, algorithm_names)  # Setting the labels for x-axis (algorithms)
+    plt.legend()
+
+    # Display the plot
+    plt.tight_layout()
+    plt.show()
+
+
+def close():
+  main.destroy()
+
+# Main window setup
+main = Tk()
+main.title("Personalized Ad Targeting System using Machine Learning for Optimizing Ad Delivery")
+main.geometry("1200x800")  # Spacious window size
+main.config(bg='#2B3A67')  # Navy Blue background for a sleek look
+
+# Title Label with a gradient-like dark-to-light theme
+font = ('Verdana', 20, 'bold')
+title = Label(main, text='Personalized Ad Targeting System using Machine Learning for Optimizing Ad Delivery',
+              bg='#282828', fg='#FFD700', font=font, height=2)  # Dark background with Gold text
+title.pack(fill=X, pady=10)
+
+# Frame to hold buttons and text console
+main_frame = Frame(main, bg='#2B3A67')  # Navy Blue for consistency
+main_frame.pack(fill=BOTH, expand=True, padx=20, pady=20)
+
+# Frame to hold buttons (centered and in two rows)
+button_frame = Frame(main_frame, bg='#2B3A67')
+button_frame.pack(pady=20)
+
+# Button Font and Style
+font1 = ('Arial', 12, 'bold')
+
+# Helper function to create buttons with fancy color tones
+def create_button(text, command, row, column):
+    btn = Button(button_frame, text=text, command=command, bg='#1E90FF', fg='white',  # Dodger Blue buttons
+                 activebackground='#FFA07A', font=font1, width=25, relief=RAISED, bd=4)  # Light Salmon hover effect
+    btn.grid(row=row, column=column, padx=20, pady=15)
+
+# Adding buttons in two rows, three buttons per row
+create_button("Upload Ad Click Dataset", upload, 0, 0)
+create_button("Data Preprocessing and EDA", preprocess, 0, 1)
+create_button("GBC Classifier", GBCRegressor, 0, 2)
+create_button("FFNN ETC Classifier", FFNN, 1, 0)
+create_button("Performance Metrics Graph", graph, 1, 1)
+create_button("Prediction on Test Data", predict, 1, 2)
+
+# Text console styling with scrollbar in fancy tones
+text_frame = Frame(main_frame, bg='#2B3A67')  # Consistent background
+text_frame.pack(fill=BOTH, expand=True, padx=20, pady=20)
+
+# Text box styling with a centered and modern look
+text = Text(text_frame, height=15, width=90, wrap=WORD, bg='#F5DEB3', fg='#483D8B', font=('Comic Sans MS', 14))  # Wheat background
+scroll = Scrollbar(text_frame, command=text.yview)
+text.configure(yscrollcommand=scroll.set)
+
+text.pack(side=LEFT, fill=BOTH, expand=True)
+scroll.pack(side=RIGHT, fill=Y)
+
+# Adding the Close Application button with consistent style and size
+close_button = Button(button_frame, text="Close Application", command=close, bg='#B22222', fg='white',  # Firebrick button
+                      activebackground='#FF6347', font=font1, width=25, relief=RAISED, bd=4)
+
+# Placing the Close button in the second row, third column (consistent layout)
+close_button.grid(row=1, column=3, padx=20, pady=15)
+
+
+main.mainloop()
